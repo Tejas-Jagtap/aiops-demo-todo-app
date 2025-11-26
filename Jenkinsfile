@@ -31,11 +31,12 @@ pipeline {
                     # Download Node.js if not already present
                     if [ ! -f "${WORKSPACE}/.nodejs/bin/node" ]; then
                         echo "Downloading Node.js ${NODE_VERSION}..."
-                        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o node.tar.xz
+                        # Use .tar.gz instead of .tar.xz (xz not available in Jenkins container)
+                        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" -o node.tar.gz
                         
                         echo "Extracting Node.js..."
-                        tar -xf node.tar.xz --strip-components=1 -C ${WORKSPACE}/.nodejs
-                        rm node.tar.xz
+                        tar -xzf node.tar.gz --strip-components=1 -C ${WORKSPACE}/.nodejs
+                        rm node.tar.gz
                         
                         echo "Node.js installed successfully"
                     else
