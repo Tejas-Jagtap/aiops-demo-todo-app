@@ -1,28 +1,55 @@
+// Alternative Jenkinsfile for environments without Docker access
+// This version manually downloads and sets up Node.js
 pipeline {
     agent any
     
-    tools {
-        nodejs 'NodeJS-22'  // Must match the name configured in Jenkins Global Tool Configuration
-    }
-    
     environment {
-        NODE_VERSION = '22'
+        NODE_VERSION = '22.15.0'
         APP_NAME = 'aiops-demo-todo-app'
-        
-        // Toggle this to simulate build failures for log collection testing
         SIMULATE_FAILURE = 'false'
+        NPM_CONFIG_UPDATE_NOTIFIER = 'false'
+        CI = 'true'
+        // Node.js will be installed in workspace
+        NODEJS_HOME = "${WORKSPACE}/.nodejs"
+        PATH = "${WORKSPACE}/.nodejs/bin:${env.PATH}"
     }
     
     options {
-        // Keep last 30 builds for log collection
         buildDiscarder(logRotator(numToKeepStr: '30', daysToKeepStr: '30'))
-        // Timeout after 30 minutes
         timeout(time: 30, unit: 'MINUTES')
-        // Add timestamps to console output
         timestamps()
     }
     
     stages {
+        stage('Setup Node.js') {
+            steps {
+                echo 'Downloading and setting up Node.js...'
+                sh '''
+                    # Create directory for Node.js
+                    mkdir -p ${WORKSPACE}/.nodejs
+                    
+                    # Download Node.js if not already present
+                    if [ ! -f "${WORKSPACE}/.nodejs/bin/node" ]; then
+                        echo "Downloading Node.js ${NODE_VERSION}..."
+                        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o node.tar.xz
+                        
+                        echo "Extracting Node.js..."
+                        tar -xf node.tar.xz --strip-components=1 -C ${WORKSPACE}/.nodejs
+                        rm node.tar.xz
+                        
+                        echo "Node.js installed successfully"
+                    else
+                        echo "Node.js already present"
+                    fi
+                    
+                    # Verify installation
+                    export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                    node --version
+                    npm --version
+                '''
+            }
+        }
+        
         stage('Environment Info') {
             steps {
                 echo '========================================='
@@ -35,9 +62,12 @@ pipeline {
                 echo "Workspace: ${env.WORKSPACE}"
                 echo '========================================='
                 
-                sh 'node --version'
-                sh 'npm --version'
-                sh 'git --version'
+                sh '''
+                    export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                    node --version
+                    npm --version
+                    git --version
+                '''
             }
         }
         
@@ -45,26 +75,18 @@ pipeline {
             steps {
                 echo 'Checking out source code...'
                 checkout scm
-                
-                // Display git information
                 sh 'git log -1 --pretty=format:"%h - %an, %ar : %s"'
-                sh 'git branch'
             }
         }
         
         stage('Install Dependencies') {
             steps {
                 echo 'Installing Node.js dependencies...'
-                script {
-                    // Simulate occasional dependency installation failures
-                    if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 5 == 0) {
-                        echo 'WARNING: Simulating dependency installation failure'
-                        sh 'npm install --legacy-peer-deps || exit 1'
-                    } else {
-                        sh 'npm install --legacy-peer-deps'
-                        echo 'Dependencies installed successfully'
-                    }
-                }
+                sh '''
+                    export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                    npm install --legacy-peer-deps
+                '''
+                echo 'Dependencies installed successfully'
             }
         }
         
@@ -73,11 +95,13 @@ pipeline {
                 echo 'Running ESLint...'
                 script {
                     try {
-                        sh 'npm run lint'
+                        sh '''
+                            export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                            npm run lint
+                        '''
                         echo 'Linting passed successfully'
                     } catch (Exception e) {
                         echo "WARNING: Linting issues detected: ${e.message}"
-                        // Continue build even if linting fails
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -87,23 +111,15 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo 'Running Jest test suite...'
-                script {
-                    // Simulate test failures for specific builds
-                    if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 3 == 0) {
-                        echo 'WARNING: Simulating test failure'
-                        sh 'npm run test:ci || exit 1'
-                    } else {
-                        sh 'npm run test:ci'
-                        echo 'All tests passed successfully'
-                    }
-                }
+                sh '''
+                    export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                    npm run test:ci
+                '''
+                echo 'All tests passed successfully'
             }
             post {
                 always {
-                    // Publish test results
                     junit allowEmptyResults: true, testResults: 'coverage/junit.xml'
-                    
-                    // Publish coverage report
                     publishHTML([
                         allowMissing: true,
                         alwaysLinkToLastBuild: true,
@@ -119,37 +135,12 @@ pipeline {
         stage('Build Application') {
             steps {
                 echo 'Building Next.js application...'
-                script {
-                    // Simulate build failures occasionally
-                    if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 7 == 0) {
-                        echo 'ERROR: Simulating build failure'
-                        error('Build failed due to simulated error')
-                    } else {
-                        sh 'npm run build'
-                        echo 'Application built successfully'
-                        
-                        // Check build output
-                        sh 'ls -lah .next'
-                    }
-                }
-            }
-        }
-        
-        stage('Docker Build') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo 'Building Docker image...'
-                script {
-                    try {
-                        sh "docker build -t ${APP_NAME}:${env.BUILD_NUMBER} -t ${APP_NAME}:latest ."
-                        echo "Docker image built: ${APP_NAME}:${env.BUILD_NUMBER}"
-                    } catch (Exception e) {
-                        echo "WARNING: Docker build failed: ${e.message}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
-                }
+                sh '''
+                    export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                    npm run build
+                '''
+                echo 'Application built successfully'
+                sh 'ls -lah .next'
             }
         }
         
@@ -158,11 +149,13 @@ pipeline {
                 echo 'Running npm audit...'
                 script {
                     try {
-                        sh 'npm audit --audit-level=moderate'
+                        sh '''
+                            export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+                            npm audit --audit-level=moderate
+                        '''
                         echo 'No critical vulnerabilities found'
                     } catch (Exception e) {
-                        echo "WARNING: Security vulnerabilities detected: ${e.message}"
-                        // Mark build as unstable but don't fail
+                        echo "WARNING: Security vulnerabilities detected"
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -180,22 +173,6 @@ pipeline {
                 '''
             }
         }
-        
-        stage('Deploy') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo 'Deployment stage (placeholder)...'
-                script {
-                    echo 'In production, this would deploy to:'
-                    echo '- Kubernetes cluster'
-                    echo '- Docker registry'
-                    echo '- Cloud platform (Azure/AWS/GCP)'
-                    echo "Image: ${APP_NAME}:${env.BUILD_NUMBER}"
-                }
-            }
-        }
     }
     
     post {
@@ -207,28 +184,18 @@ pipeline {
             echo "Duration: ${currentBuild.durationString}"
             echo "Build Number: ${env.BUILD_NUMBER}"
             echo '========================================='
-            
-            // Clean up workspace (optional)
-            // cleanWs()
         }
         
         success {
             echo '✓ Build completed successfully!'
-            echo 'Logs collected for AIOps analysis'
         }
         
         failure {
             echo '✗ Build failed!'
-            echo 'Failure logs will be analyzed by AIOps system'
         }
         
         unstable {
             echo '⚠ Build is unstable'
-            echo 'Some tests or checks failed but build continued'
-        }
-        
-        aborted {
-            echo '⊗ Build was aborted'
         }
     }
 }
