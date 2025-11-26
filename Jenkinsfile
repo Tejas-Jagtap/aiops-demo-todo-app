@@ -1,11 +1,13 @@
 pipeline {
     agent any
     
+    tools {
+        nodejs 'NodeJS-22'  // Must match the name configured in Jenkins Global Tool Configuration
+    }
+    
     environment {
-        NODE_VERSION = '18'
+        NODE_VERSION = '22'
         APP_NAME = 'aiops-demo-todo-app'
-        BUILD_ID = "${env.BUILD_NUMBER}"
-        GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
         
         // Toggle this to simulate build failures for log collection testing
         SIMULATE_FAILURE = 'false'
@@ -28,15 +30,14 @@ pipeline {
                 echo '========================================='
                 echo "Build Number: ${env.BUILD_NUMBER}"
                 echo "Build ID: ${env.BUILD_ID}"
-                echo "Git Commit: ${GIT_COMMIT_SHORT}"
                 echo "Node Version: ${NODE_VERSION}"
                 echo "Jenkins URL: ${env.JENKINS_URL}"
                 echo "Workspace: ${env.WORKSPACE}"
                 echo '========================================='
                 
-                sh 'node --version || echo "Node not found"'
-                sh 'npm --version || echo "NPM not found"'
-                sh 'git --version || echo "Git not found"'
+                sh 'node --version'
+                sh 'npm --version'
+                sh 'git --version'
             }
         }
         
@@ -54,16 +55,14 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo 'Installing Node.js dependencies...'
-                dir('demo-todo-app') {
-                    script {
-                        // Simulate occasional dependency installation failures
-                        if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 5 == 0) {
-                            echo 'WARNING: Simulating dependency installation failure'
-                            sh 'npm install --legacy-peer-deps || exit 1'
-                        } else {
-                            sh 'npm install --legacy-peer-deps'
-                            echo 'Dependencies installed successfully'
-                        }
+                script {
+                    // Simulate occasional dependency installation failures
+                    if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 5 == 0) {
+                        echo 'WARNING: Simulating dependency installation failure'
+                        sh 'npm install --legacy-peer-deps || exit 1'
+                    } else {
+                        sh 'npm install --legacy-peer-deps'
+                        echo 'Dependencies installed successfully'
                     }
                 }
             }
@@ -72,16 +71,14 @@ pipeline {
         stage('Lint') {
             steps {
                 echo 'Running ESLint...'
-                dir('demo-todo-app') {
-                    script {
-                        try {
-                            sh 'npm run lint'
-                            echo 'Linting passed successfully'
-                        } catch (Exception e) {
-                            echo "WARNING: Linting issues detected: ${e.message}"
-                            // Continue build even if linting fails
-                            currentBuild.result = 'UNSTABLE'
-                        }
+                script {
+                    try {
+                        sh 'npm run lint'
+                        echo 'Linting passed successfully'
+                    } catch (Exception e) {
+                        echo "WARNING: Linting issues detected: ${e.message}"
+                        // Continue build even if linting fails
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
@@ -90,30 +87,28 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo 'Running Jest test suite...'
-                dir('demo-todo-app') {
-                    script {
-                        // Simulate test failures for specific builds
-                        if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 3 == 0) {
-                            echo 'WARNING: Simulating test failure'
-                            sh 'npm run test:ci || exit 1'
-                        } else {
-                            sh 'npm run test:ci'
-                            echo 'All tests passed successfully'
-                        }
+                script {
+                    // Simulate test failures for specific builds
+                    if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 3 == 0) {
+                        echo 'WARNING: Simulating test failure'
+                        sh 'npm run test:ci || exit 1'
+                    } else {
+                        sh 'npm run test:ci'
+                        echo 'All tests passed successfully'
                     }
                 }
             }
             post {
                 always {
                     // Publish test results
-                    junit allowEmptyResults: true, testResults: 'demo-todo-app/coverage/junit.xml'
+                    junit allowEmptyResults: true, testResults: 'coverage/junit.xml'
                     
                     // Publish coverage report
                     publishHTML([
                         allowMissing: true,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
-                        reportDir: 'demo-todo-app/coverage',
+                        reportDir: 'coverage',
                         reportFiles: 'index.html',
                         reportName: 'Test Coverage Report'
                     ])
@@ -124,19 +119,17 @@ pipeline {
         stage('Build Application') {
             steps {
                 echo 'Building Next.js application...'
-                dir('demo-todo-app') {
-                    script {
-                        // Simulate build failures occasionally
-                        if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 7 == 0) {
-                            echo 'ERROR: Simulating build failure'
-                            error('Build failed due to simulated error')
-                        } else {
-                            sh 'npm run build'
-                            echo 'Application built successfully'
-                            
-                            // Check build output
-                            sh 'ls -lah .next'
-                        }
+                script {
+                    // Simulate build failures occasionally
+                    if (env.SIMULATE_FAILURE == 'true' && env.BUILD_NUMBER.toInteger() % 7 == 0) {
+                        echo 'ERROR: Simulating build failure'
+                        error('Build failed due to simulated error')
+                    } else {
+                        sh 'npm run build'
+                        echo 'Application built successfully'
+                        
+                        // Check build output
+                        sh 'ls -lah .next'
                     }
                 }
             }
@@ -148,15 +141,13 @@ pipeline {
             }
             steps {
                 echo 'Building Docker image...'
-                dir('demo-todo-app') {
-                    script {
-                        try {
-                            sh "docker build -t ${APP_NAME}:${BUILD_ID} -t ${APP_NAME}:latest ."
-                            echo "Docker image built: ${APP_NAME}:${BUILD_ID}"
-                        } catch (Exception e) {
-                            echo "WARNING: Docker build failed: ${e.message}"
-                            currentBuild.result = 'UNSTABLE'
-                        }
+                script {
+                    try {
+                        sh "docker build -t ${APP_NAME}:${env.BUILD_NUMBER} -t ${APP_NAME}:latest ."
+                        echo "Docker image built: ${APP_NAME}:${env.BUILD_NUMBER}"
+                    } catch (Exception e) {
+                        echo "WARNING: Docker build failed: ${e.message}"
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
@@ -165,16 +156,14 @@ pipeline {
         stage('Security Scan') {
             steps {
                 echo 'Running npm audit...'
-                dir('demo-todo-app') {
-                    script {
-                        try {
-                            sh 'npm audit --audit-level=moderate'
-                            echo 'No critical vulnerabilities found'
-                        } catch (Exception e) {
-                            echo "WARNING: Security vulnerabilities detected: ${e.message}"
-                            // Mark build as unstable but don't fail
-                            currentBuild.result = 'UNSTABLE'
-                        }
+                script {
+                    try {
+                        sh 'npm audit --audit-level=moderate'
+                        echo 'No critical vulnerabilities found'
+                    } catch (Exception e) {
+                        echo "WARNING: Security vulnerabilities detected: ${e.message}"
+                        // Mark build as unstable but don't fail
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
@@ -183,14 +172,12 @@ pipeline {
         stage('Performance Check') {
             steps {
                 echo 'Analyzing build size...'
-                dir('demo-todo-app') {
-                    sh '''
-                        echo "Build Statistics:"
-                        du -sh .next
-                        echo "Static Files:"
-                        du -sh .next/static 2>/dev/null || echo "No static files"
-                    '''
-                }
+                sh '''
+                    echo "Build Statistics:"
+                    du -sh .next
+                    echo "Static Files:"
+                    du -sh .next/static 2>/dev/null || echo "No static files"
+                '''
             }
         }
         
@@ -205,7 +192,7 @@ pipeline {
                     echo '- Kubernetes cluster'
                     echo '- Docker registry'
                     echo '- Cloud platform (Azure/AWS/GCP)'
-                    echo "Image: ${APP_NAME}:${BUILD_ID}"
+                    echo "Image: ${APP_NAME}:${env.BUILD_NUMBER}"
                 }
             }
         }
@@ -233,11 +220,6 @@ pipeline {
         failure {
             echo '✗ Build failed!'
             echo 'Failure logs will be analyzed by AIOps system'
-            
-            // In production, send notification
-            // emailext subject: "Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-            //          body: "Check Jenkins for details: ${env.BUILD_URL}",
-            //          to: "team@example.com"
         }
         
         unstable {
