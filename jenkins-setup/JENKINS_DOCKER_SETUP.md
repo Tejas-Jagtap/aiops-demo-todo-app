@@ -3,6 +3,7 @@
 This guide helps you set up Jenkins with Docker support on Windows (Docker Desktop).
 
 ## Prerequisites
+
 - Docker Desktop for Windows installed and running
 - WSL 2 backend enabled (recommended)
 
@@ -80,6 +81,7 @@ exit
 ### Step 6: Test Docker access
 
 Create a test pipeline with this script:
+
 ```groovy
 pipeline {
     agent {
@@ -108,7 +110,7 @@ This runs a separate Docker daemon inside Jenkins (more isolated but more comple
 Save this as `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   jenkins:
@@ -130,6 +132,7 @@ volumes:
 ```
 
 Run with:
+
 ```powershell
 docker-compose up -d
 ```
@@ -173,6 +176,7 @@ For your **AIOps Demo Todo App**, the simplest approach is:
 3. Just push and build!
 
 The Docker agent approach (`Jenkinsfile.docker`) is only needed if you want:
+
 - Cleaner builds (isolated containers)
 - Different Node.js versions per branch
 - Building Docker images in the pipeline
